@@ -160,7 +160,7 @@ def splits(
 
 @app.command()
 def eval(
-    table: Path = typer.Option(..., "--table", help="Canonical interaction table."),
+    table: Path | None = typer.Option(None, "--table", help="Canonical interaction table."),
     strategy: str = typer.Option("pairwise", "--strategy"),
     seed: int = typer.Option(42, "--seed"),
     out: Path | None = typer.Option(None, "--out", help="Write metrics JSON here."),
@@ -176,7 +176,13 @@ def eval(
     )
     from medguard.modeling.baseline import DrugPairTfidfBaseline, build_baseline_df
 
-    frame = pd.read_parquet(table)
+    settings = get_settings()
+    table_path = table or settings.interactions_path
+    if not table_path.exists():
+        console.print(f"[red]Error: interaction table {table_path} not found.[/red]")
+        raise typer.Exit(code=1)
+
+    frame = pd.read_parquet(table_path)
     train, val, test, report = make_splits(frame, strategy=SplitStrategy(strategy), seed=seed)
 
     # Build a labelled training set from the KB plus sampled negatives.

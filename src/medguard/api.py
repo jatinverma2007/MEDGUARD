@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -70,19 +70,7 @@ def get_pipeline() -> MedGuardPipeline:
     return _pipeline
 
 
-# --- Static web UI ---
-WEB_DIST = Path(os.getenv("WEB_DIST_PATH", "/app/web/dist"))
-if WEB_DIST.exists():
-    app.mount("/web", StaticFiles(directory=WEB_DIST, html=True), name="web")
-    logger.info("Mounted web UI at /web from %s", WEB_DIST)
-
-    @app.get("/")
-    async def root() -> FileResponse:
-        return FileResponse(WEB_DIST / "index.html")
-else:
-    @app.get("/")
-    async def root() -> dict:
-        return {"message": "MedGuard API — web UI not built. Run `docker build` or `cd web && npm run build`."}
+api_router = APIRouter()
 
 
 # ------------------------------------------------------------------ schemas
@@ -101,7 +89,7 @@ class HealthResponse(BaseModel):
     heavy_models: bool
 
 
-@app.get("/health", response_model=HealthResponse, tags=["meta"])
+@api_router.get("/health", response_model=HealthResponse, tags=["meta"])
 def health(pipeline: Annotated[MedGuardPipeline, Depends(get_pipeline)]) -> HealthResponse:
     """Service health and knowledge-base status."""
     settings = get_settings()
@@ -114,7 +102,7 @@ def health(pipeline: Annotated[MedGuardPipeline, Depends(get_pipeline)]) -> Heal
     )
 
 
-@app.post("/analyze/text", tags=["analysis"])
+@api_router.post("/analyze/text", tags=["analysis"])
 def analyze_text(
     request: TextAnalysisRequest,
     pipeline: Annotated[MedGuardPipeline, Depends(get_pipeline)],
@@ -126,7 +114,7 @@ def analyze_text(
     return result.model_dump(mode="json")
 
 
-@app.post("/analyze/image", tags=["analysis"])
+@api_router.post("/analyze/image", tags=["analysis"])
 async def analyze_image(
     file: Annotated[UploadFile, File(description="Prescription image (jpg/png)")],
     pipeline: Annotated[MedGuardPipeline, Depends(get_pipeline)],
@@ -164,7 +152,7 @@ async def analyze_image(
     return result.model_dump(mode="json")
 
 
-@app.get("/drugs", tags=["knowledge base"])
+@api_router.get("/drugs", tags=["knowledge base"])
 def list_drugs(
     pipeline: Annotated[MedGuardPipeline, Depends(get_pipeline)],
     limit: int = 50,
@@ -179,7 +167,7 @@ def list_drugs(
     return {"total": len(drugs), "offset": offset, "limit": limit, "items": window}
 
 
-@app.get("/interaction", tags=["knowledge base"])
+@api_router.get("/interaction", tags=["knowledge base"])
 def lookup_interaction(
     drug_a: str,
     drug_b: str,
@@ -199,6 +187,52 @@ def lookup_interaction(
         "found": bool(findings),
         "findings": [f.model_dump(mode="json") for f in findings],
     }
+
+
+# Include API routes both with and without the /api prefix
+app.include_router(api_router)
+app.include_router(api_router, prefix="/api")
+
+
+# --- Static web UI ---
+_default_web_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
+WEB_DIST = Path(
+    os.getenv(
+        "WEB_DIST_PATH",
+        str(_default_web_dist if _default_web_dist.exists() else "/app/web/dist"),
+    )
+)
+if WEB_DIST.exists():
+    if (WEB_DIST / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+
+    if (WEB_DIST / "medguard-logo.svg").exists():
+
+        @app.get("/medguard-logo.svg")
+        async def logo() -> FileResponse:
+            return FileResponse(WEB_DIST / "medguard-logo.svg")
+
+        @app.get("/web/medguard-logo.svg")
+        async def web_logo() -> FileResponse:
+            return FileResponse(WEB_DIST / "medguard-logo.svg")
+
+    app.mount("/web", StaticFiles(directory=WEB_DIST, html=True), name="web")
+    logger.info("Mounted web UI at /web from %s", WEB_DIST)
+
+    @app.get("/web")
+    async def web_root() -> FileResponse:
+        return FileResponse(WEB_DIST / "index.html")
+
+    @app.get("/")
+    async def root() -> FileResponse:
+        return FileResponse(WEB_DIST / "index.html")
+else:
+
+    @app.get("/")
+    async def root() -> dict:
+        return {
+            "message": "MedGuard API — web UI not built. Run `docker build` or `cd web && npm run build`."
+        }
 
 
 def _register_middleware() -> None:

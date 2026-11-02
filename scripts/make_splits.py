@@ -135,7 +135,13 @@ def main() -> int:
     settings = get_settings()
     settings.ensure_dirs()
 
-    table = args.table or (settings.processed_data_dir / "interactions.parquet")
+    default_table = settings.processed_data_dir / "interactions.parquet"
+    if not default_table.exists():
+        demo_table = settings.processed_data_dir / "demo_interactions.parquet"
+        if demo_table.exists():
+            default_table = demo_table
+
+    table = args.table or default_table
     if not table.exists():
         logger.error(
             "No interaction table at %s. Run `python scripts/download_data.py --all` first.",
