@@ -1,0 +1,18 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:7860"
+    environment:
+      MEDGUARD_DEFAULT_LANGUAGE: en
+      MEDGUARD_ABSTAIN_THRESHOLD: "0.55"
+      MEDGUARD_LOG_PHI: "false"
+      # MEDGUARD_LLM_API_KEY: ${GROQ_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
