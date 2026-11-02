@@ -17,11 +17,14 @@ Privacy notes (design constraints, not an afterthought):
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from medguard import __version__
@@ -56,16 +59,30 @@ def get_pipeline() -> MedGuardPipeline:
                 safe_assertion_threshold=settings.safe_assertion_threshold,
             ),
         )
-        interactions = settings.interactions_path
-        if interactions.exists():
+        if settings.interactions_path.exists():
             import pandas as pd
 
             from medguard.interaction.retrieve import KnowledgeBase
 
-            pipeline.kb = KnowledgeBase.from_frame(pd.read_parquet(interactions))
+            pipeline.kb = KnowledgeBase.from_frame(pd.read_parquet(settings.interactions_path))
             logger.info("Loaded knowledge base: %d drugs", pipeline.kb.drug_count)
         _pipeline = pipeline
     return _pipeline
+
+
+# --- Static web UI ---
+WEB_DIST = Path(os.getenv("WEB_DIST_PATH", "/app/web/dist"))
+if WEB_DIST.exists():
+    app.mount("/web", StaticFiles(directory=WEB_DIST, html=True), name="web")
+    logger.info("Mounted web UI at /web from %s", WEB_DIST)
+
+    @app.get("/")
+    async def root() -> FileResponse:
+        return FileResponse(WEB_DIST / "index.html")
+else:
+    @app.get("/")
+    async def root() -> dict:
+        return {"message": "MedGuard API — web UI not built. Run `docker build` or `cd web && npm run build`."}
 
 
 # ------------------------------------------------------------------ schemas
