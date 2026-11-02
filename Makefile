@@ -1,4 +1,4 @@
-.PHONY: help install install-dev data splits test lint fmt typecheck api eval all clean
+.PHONY: help install install-dev data splits test lint fmt typecheck api eval compare demo all clean
 
 PY ?= python3
 
@@ -34,6 +34,12 @@ api:  ## Run the local API on :8000
 	$(PY) -m uvicorn medguard.api:app --reload --port 8000
 
 eval:  ## Reproduce the headline metrics table
-	$(PY) -m medguard.cli eval --config configs/eval.yaml
+	$(PY) -m medguard.cli eval --table data/processed/interactions.parquet --out artifacts/metrics.json
+
+compare:  ## Quantify the leakage gap between random and leak-free splits
+	$(PY) scripts/make_splits.py --compare
+
+demo:  ## Run the pipeline on a sample prescription
+	$(PY) -m medguard.cli analyze "Tab Ecosprin AV 75mg, Tab Warfarin 5mg, Tab Digoxin 0.25mg"
 
 all: fmt lint typecheck test  ## Format, lint, typecheck, test
