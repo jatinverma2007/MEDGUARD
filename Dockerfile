@@ -1,4 +1,15 @@
-FROM python:3.11-slim AS base
+# Multi-stage Dockerfile for MedGuard
+
+# --- Stage 1: Build Frontend ---
+FROM node:20-alpine AS web-builder
+WORKDIR /web
+COPY web/package.json web/package-lock.json* ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# --- Stage 2: Final Python Image ---
+FROM python:3.11-slim AS final
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -20,6 +31,11 @@ RUN pip install --upgrade pip && pip install ".[ocr]"
 
 COPY scripts ./scripts
 COPY tests ./tests
+COPY data ./data
+
+# Copy built frontend assets
+COPY --from=web-builder /web/dist /app/web/dist
+ENV WEB_DIST_PATH=/app/web/dist
 
 RUN useradd --create-home --uid 1000 medguard && chown -R medguard:medguard /app
 USER medguard
@@ -30,27 +46,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:7860/health || exit 1
 
 CMD ["python", "-m", "uvicorn", "medguard.api:app", "--host", "0.0.0.0", "--port", "7860"]
-
-
-# --- Web UI build stage ---
-FROM node:20-alpine AS web-builder
-
-WORKDIR /web
-COPY web/package.json web/package-lock.json* ./
-RUN npm ci
-
-COPY web/ ./
-RUN npm run build
-
-
-# --- Final image with API + static web UI ---
-FROM base AS final
-
-USER root
-COPY --from=web-builder /web/dist /app/web/dist
-RUN chown -R medguard:medguard /app/web/dist
-
-# FastAPI will serve the static files at /web and the API at /api
-ENV WEB_DIST_PATH=/app/web/dist
-
-USER medguard
