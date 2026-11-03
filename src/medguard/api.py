@@ -140,7 +140,12 @@ async def analyze_image(
     tmp_path = Path("/tmp") / f"medguard_{abs(hash(payload))}.png"
     tmp_path.write_bytes(payload)
     try:
-        result = pipeline.analyze_image(tmp_path, language=language)
+        try:
+            result = pipeline.analyze_image(tmp_path, language=language)
+        except ValueError as exc:
+            # Provide a clear error when OCR backend cannot handle images.
+            # Suggest installing an OCR backend (e.g., Tesseract) or using the text endpoint.
+            raise HTTPException(status_code=422, detail=f"{exc} Install an OCR backend (e.g., Tesseract) or use the /analyze/text endpoint.") from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:

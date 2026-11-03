@@ -106,6 +106,13 @@ ALIASES: dict[str, str] = {
     "advil": "ibuprofen",
     "voltaren": "diclofenac",
     "vicks": "paracetamol",
+    "allegra": "fexofenadine",
+    "fexofenadine": "fexofenadine",
+    "fexofed": "fexofenadine",
+    "fexo": "fexofenadine",
+    "antiemetic": "ondansetron",
+    "emset": "ondansetron",
+    "vomikind": "ondansetron",
     "combiflam": "ibuprofen diclofenac",
     "flexon": "ibuprofen",
     # --- Respiratory ---

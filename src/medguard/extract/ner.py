@@ -102,6 +102,8 @@ COMMON_GENERICS: tuple[str, ...] = (
     "loratadine",
     "cetirizine",
     "levocetirizine",
+    "fexofenadine",
+    "antiemetic",
     "montelukast",
     "salbutamol",
     "budesonide",

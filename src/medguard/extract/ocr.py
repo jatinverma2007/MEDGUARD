@@ -1,6 +1,10 @@
 """Prescription OCR.
 
-Two backends:
+Backends:
+
+``GroqVisionOcr``
+    Cloud OCR via the Groq API using ``llama-3.2-90b-vision-preview``.
+    Requires only a Groq API key (free tier available). No GPU needed.
 
 ``QwenVLOcr``
     ``Qwen/Qwen2.5-VL-3B-Instruct``. The model card reports **DocVQA 93.9**
@@ -13,7 +17,7 @@ Two backends:
     good on clean printed prescriptions - it is the right baseline, and
     beating a Tesseract baseline is a legitimate result.
 
-Both return a :class:`OcrResult` with the raw text plus the per-token
+All return a :class:`OcrResult` with the raw text plus the per-token
 confidence when the backend can provide it.
 """
 
@@ -205,6 +209,113 @@ class QwenVLOcr(OcrBackend):
         )[0]
 
         return OcrResult(text=transcription.strip(), backend=self.name)
+
+
+class GroqVisionOcr(OcrBackend):
+    """Cloud OCR using the Groq API with a vision-capable LLM.
+
+    Uses the OpenAI-compatible ``/chat/completions`` endpoint with a base64-
+    encoded image.  Requires a Groq API key (free tier available).
+    """
+
+    name = "groq-vision"
+
+    _MIME_MAP = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+        ".tiff": "image/tiff",
+        ".tif": "image/tiff",
+        ".gif": "image/gif",
+    }
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.groq.com/openai/v1",
+        model: str = "qwen/qwen3.8-27b",
+        timeout: float = 60.0,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+
+    def read(self, image_path: str | Path) -> OcrResult:
+        import base64
+
+        import httpx
+
+        path = Path(image_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Image not found: {path}")
+
+        # Read and encode the image
+        image_bytes = path.read_bytes()
+        b64_data = base64.b64encode(image_bytes).decode("ascii")
+
+        # Determine MIME type from extension
+        ext = path.suffix.lower()
+        mime_type = self._MIME_MAP.get(ext, "image/png")
+
+        data_uri = f"data:{mime_type};base64,{b64_data}"
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": PRESCRIPTION_PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": data_uri},
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 1024,
+            "temperature": 0,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        url = f"{self.base_url}/chat/completions"
+
+        try:
+            response = httpx.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(
+                f"Groq API request timed out after {self.timeout}s."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:500] if exc.response else "no detail"
+            raise RuntimeError(
+                f"Groq API returned {exc.response.status_code}: {detail}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Groq API request failed: {exc}") from exc
+
+        body = response.json()
+        try:
+            text = body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(
+                f"Unexpected Groq API response structure: {body}"
+            ) from exc
+
+        return OcrResult(text=text.strip(), backend=self.name)
 
 
 class PassthroughOcr(OcrBackend):

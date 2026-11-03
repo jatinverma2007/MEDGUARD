@@ -26,7 +26,7 @@ from medguard.config import Settings, get_settings
 from medguard.data.splits import canonical_pair, iter_pairs
 from medguard.explain.templates import explain_finding, overall_summary
 from medguard.extract.ner import DrugExtractor, build_extractor
-from medguard.extract.ocr import OcrBackend, PassthroughOcr
+from medguard.extract.ocr import GroqVisionOcr, OcrBackend, PassthroughOcr
 from medguard.interaction.retrieve import KnowledgeBase, merge_findings, rows_to_findings
 from medguard.interaction.severity import (
     apply_confidence_cap,
@@ -75,7 +75,13 @@ class MedGuardPipeline:
                 model_id=self.settings.ner_model,
             )
         if self.ocr is None:
-            self.ocr = PassthroughOcr()
+            if self.settings.llm_api_key:
+                self.ocr = GroqVisionOcr(
+                    api_key=self.settings.llm_api_key,
+                    base_url=self.settings.llm_base_url,
+                )
+            else:
+                self.ocr = PassthroughOcr()
 
     # ------------------------------------------------------------- loading
     @classmethod
